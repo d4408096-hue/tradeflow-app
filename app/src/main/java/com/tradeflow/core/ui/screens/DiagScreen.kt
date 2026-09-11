@@ -11,14 +11,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -41,6 +45,7 @@ fun DiagScreen(onBack: () -> Unit, vm: DiagVm = viewModel()) {
     val clipboard = LocalClipboardManager.current
     val events by vm.events.collectAsState()
     val fmt = remember { SimpleDateFormat("MM-dd HH:mm:ss", Locale.US) }
+    var showReset by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().padding(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -57,6 +62,11 @@ fun DiagScreen(onBack: () -> Unit, vm: DiagVm = viewModel()) {
             },
             modifier = Modifier.fillMaxWidth()
         ) { Text("📋 Copy log") }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = { showReset = true },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("🧪 Reset test data") }
         Spacer(Modifier.height(10.dp))
         if (events.isEmpty()) Text("Nothing logged yet. Make a test call! 📞", fontSize = 15.sp)
         LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -66,4 +76,22 @@ fun DiagScreen(onBack: () -> Unit, vm: DiagVm = viewModel()) {
             }
         }
     }
+
+    if (showReset) AlertDialog(
+        onDismissRequest = { showReset = false },
+        title = { Text("Reset test data?") },
+        text = { Text("Deletes ALL conversations + messages (cooldowns too). Jobs and customers stay. Testing only!") },
+        confirmButton = {
+            TextButton(onClick = {
+                scope.launch {
+                    vm.reset()
+                    showReset = false
+                    Toast.makeText(ctx, "Test data cleared", Toast.LENGTH_SHORT).show()
+                }
+            }) { Text("Reset") }
+        },
+        dismissButton = {
+            TextButton(onClick = { showReset = false }) { Text("Cancel") }
+        }
+    )
 }

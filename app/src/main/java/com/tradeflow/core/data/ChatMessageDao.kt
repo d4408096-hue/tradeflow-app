@@ -18,4 +18,7 @@ interface ChatMessageDao {
 
     @Query("DELETE FROM messages WHERE phone = :phone")
     suspend fun clear(phone: String)
+
+    @Query("DELETE FROM messages")
+    suspend fun clearAll()
 }

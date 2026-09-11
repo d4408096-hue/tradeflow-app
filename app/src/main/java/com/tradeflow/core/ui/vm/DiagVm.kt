@@ -16,4 +16,7 @@ class DiagVm(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     suspend fun copyText(): String = repo.diagText(200)
+
+    /** Testing only. Called from the confirm dialog's coroutine scope. */
+    suspend fun reset() = repo.clearTestData()
 }

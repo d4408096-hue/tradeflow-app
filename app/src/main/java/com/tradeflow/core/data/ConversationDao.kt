@@ -28,6 +28,9 @@ interface ConversationDao {
     @Query("UPDATE conversations SET unread = 0 WHERE phone = :phone")
     suspend fun clearUnread(phone: String)
 
+    @Query("DELETE FROM conversations")
+    suspend fun clearAll()
+
     @Delete
     suspend fun delete(c: Conversation)
 }

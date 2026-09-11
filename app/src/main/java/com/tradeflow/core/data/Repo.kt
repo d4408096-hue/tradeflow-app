@@ -66,6 +66,13 @@ class Repo(private val db: TradeFlowDb) {
 
     suspend fun clearUnread(phone: String) = db.conversations().clearUnread(norm(phone))
 
+    /** Testing only: wipes conversations + messages (jobs/customers stay). */
+    suspend fun clearTestData() {
+        db.messages().clearAll()
+        db.conversations().clearAll()
+        log("SYS", "test data reset")
+    }
+
     // ---------- templates ----------
     suspend fun template(key: String): MsgTemplate? = db.templates().byKey(key)
     suspend fun saveTemplate(t: MsgTemplate) = db.templates().upsert(t)
