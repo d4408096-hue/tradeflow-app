@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand identity (app_name, brandPrimary, business_*) comes from the
+         active flavor: src/<flavor>/res/values/brand.xml — never define here. -->
+    <string name="busy_on">Busy Mode ON — auto-reply active</string>
+    <string name="busy_off">Busy Mode OFF</string>
+    <string name="confirm">Confirm</string>
+    <string name="tap_to_send">Tap to send</string>
+</resources>

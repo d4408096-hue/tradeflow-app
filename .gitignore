@@ -1,0 +1,17 @@
+# Gradle / build outputs
+.gradle/
+build/
+app/build/
+local.properties
+
+# Android Studio
+.idea/
+*.iml
+
+# NEVER commit signing keys — keystore lives in 2 safe places (phone + Drive), not git
+*.jks
+*.keystore
+keystore.properties
+
+# OS junk
+.DS_Store
