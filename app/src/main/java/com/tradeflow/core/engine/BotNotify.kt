@@ -91,6 +91,24 @@ object BotNotify {
             null, true)
     }
 
+    /** Compat-mode guard: a regular ongoing notification when FGS is unavailable. */
+    fun compatGuard(ctx: Context) {
+        ensure(ctx)
+        if (!canPost(ctx)) return
+        val n = NotificationCompat.Builder(ctx, CHAT)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("🟢 Busy Mode ON")
+            .setContentText("Auto-reply watching (compat mode)")
+            .setContentIntent(openApp(ctx, null))
+            .setOngoing(true)
+            .build()
+        NotificationManagerCompat.from(ctx).notify(1002, n)
+    }
+
+    fun clearGuard(ctx: Context) {
+        NotificationManagerCompat.from(ctx).cancel(1002)
+    }
+
     fun clearAlert(ctx: Context, phone: String) {
         NotificationManagerCompat.from(ctx).cancel(-phone.hashCode())
     }

@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tradeflow.core.TradeFlowApp
+import com.tradeflow.core.engine.BotNotify
 import com.tradeflow.core.engine.BusyModeService
 import com.tradeflow.core.engine.Prefs
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,9 +31,22 @@ class DashVm(app: Application) : AndroidViewModel(app) {
 
     fun setBusy(ctx: Context, b: Boolean) {
         val appCtx = ctx.applicationContext
-        Prefs.setBusy(appCtx, b)
-        _busy.value = b
-        if (b) BusyModeService.start(appCtx) else BusyModeService.stop(appCtx)
+        try {
+            Prefs.setBusy(appCtx, b)
+            _busy.value = b
+            if (b) BusyModeService.start(appCtx)
+            else {
+                BusyModeService.stop(appCtx)
+                BotNotify.clearGuard(appCtx)
+            }
+        } catch (e: Exception) {
+            // Engine gates on the pref (already saved) — toggle still "works".
+            _busy.value = b
+            viewModelScope.launch {
+                runCatching { repo.log("SYS", "BUSY BTN ERR: ${e.javaClass.simpleName}: ${e.message}") }
+            }
+            return
+        }
         viewModelScope.launch { repo.log("SYS", "busy=$b") }
     }
 }

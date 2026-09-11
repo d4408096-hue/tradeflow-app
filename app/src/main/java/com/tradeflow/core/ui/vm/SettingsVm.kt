@@ -30,8 +30,9 @@ class SettingsVm(app: Application) : AndroidViewModel(app) {
     val notice: StateFlow<String?> = _notice
     fun clearNotice() { _notice.value = null }
 
-    fun load(ctx: Context) = viewModelScope.launch {
-        val appCtx = ctx.applicationContext
+    fun load(ctx: Context) = viewModelScope.launch { loadNow(ctx.applicationContext) }
+
+    private suspend fun loadNow(appCtx: Context) {
         _ui.value = SettingsUi(
             name = Prefs.bizName(appCtx), phone = Prefs.bizPhone(appCtx),
             services = Prefs.services(appCtx),
@@ -58,6 +59,10 @@ class SettingsVm(app: Application) : AndroidViewModel(app) {
         if (u.tplBill.isNotBlank()) repo.saveTemplate(MsgTemplate(MsgTemplate.BILL_REVIEW, "Bill + review ask", u.tplBill))
         if (u.tplDecline.isNotBlank()) repo.saveTemplate(MsgTemplate(MsgTemplate.DECLINE, "Can't help", u.tplDecline))
         repo.log("SYS", "settings saved")
+        // Patch #2: reload from disk (UI can never show stale) + self-verify durability.
+        loadNow(appCtx)
+        val verify = Prefs.bizName(appCtx)
+        repo.log("SYS", "verify biz='$verify'")
         _notice.value = "Saved ✅"
     }
 }
