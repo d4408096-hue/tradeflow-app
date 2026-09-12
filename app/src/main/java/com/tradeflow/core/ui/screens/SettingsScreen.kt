@@ -1,6 +1,7 @@
 package com.tradeflow.core.ui.screens
 
 import android.widget.Toast
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tradeflow.core.ui.vm.SettingsUi
 import com.tradeflow.core.ui.vm.SettingsVm
+
+private fun hour12(h: Int): String {
+    val ap = if (h < 12) "am" else "pm"
+    val h12 = if (h % 12 == 0) 12 else h % 12
+    return "$h12:00$ap"
+}
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit, vm: SettingsVm = viewModel()) {
@@ -98,16 +105,17 @@ fun SettingsScreen(onBack: () -> Unit, vm: SettingsVm = viewModel()) {
             Text("Last item is always the 'Other / describe it' option.",
                 fontSize = 13.sp, color = Color.Gray)
 
-            Text("Working days", fontSize = 17.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Working days (swipe →)", fontSize = 17.sp)
+            Row(Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(1 to "S", 2 to "M", 3 to "T", 4 to "W", 5 to "T", 6 to "F", 7 to "S")
                     .forEach { (d, label) ->
                         if (days.contains(d)) Button(onClick = { days = days - d }) { Text(label) }
                         else OutlinedButton(onClick = { days = days + d }) { Text(label) }
                     }
             }
-            Stepper("Day starts", startH, 0, 23, { "$it:00" }, { startH = it })
-            Stepper("Day ends", endH, 1, 23, { "$it:00" }, { endH = it })
+            Stepper("Day starts", startH, 0, 23, ::hour12, { startH = it })
+            Stepper("Day ends", endH, 1, 23, ::hour12, { endH = it })
             Stepper("Typical job (min)", typical, 30, 480, { "$it" }, { typical = it })
 
             Text("Links", fontSize = 17.sp)

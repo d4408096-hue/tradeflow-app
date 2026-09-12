@@ -62,6 +62,7 @@ fun MoreScreen(onSettings: () -> Unit, onDiag: () -> Unit, vm: DashVm = viewMode
     val revenue by vm.revenue.collectAsState()
     val busy by vm.busy.collectAsState()
     val biz = remember { Prefs.bizName(ctx).ifBlank { "My Business" } }
+    val bizPhone = remember { Prefs.bizPhone(ctx) }
     var permTick by remember { mutableStateOf(0) }
     val missing = remember(permTick) { missingPerms(ctx) }
     val permLauncher = rememberLauncherForActivityResult(
@@ -72,6 +73,7 @@ fun MoreScreen(onSettings: () -> Unit, onDiag: () -> Unit, vm: DashVm = viewMode
 
     Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(biz, fontSize = 20.sp)
+        if (bizPhone.isNotBlank()) Text(bizPhone, fontSize = 15.sp, color = Color.Gray)
         if (missing.isNotEmpty()) {
             Card(Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFFDECEC))) {
