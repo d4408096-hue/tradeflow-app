@@ -69,19 +69,26 @@ object MissedCallHandler {
             BotNotify.permNeeded(ctx)
             return false
         }
-        val cur = ctx.contentResolver.query(
-            CallLog.Calls.CONTENT_URI,
-            arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.DATE),
-            CallLog.Calls.TYPE + "=?",
-            arrayOf(CallLog.Calls.MISSED_TYPE.toString()),
-            CallLog.Calls.DATE + " DESC LIMIT 6"
-        ) ?: return true // unreadable log -> trust the RINGING->IDLE signal
+        val cur = try {
+            ctx.contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.DATE),
+                CallLog.Calls.TYPE + "=?",
+                arrayOf(CallLog.Calls.MISSED_TYPE.toString()),
+                // Patch #9: sortOrder must be a PURE order clause. LIMIT here throws
+                // SQLiteException "Invalid token LIMIT" and kills the whole missed-call flow.
+                CallLog.Calls.DATE + " DESC"
+            )
+        } catch (_: Exception) {
+            null
+        } ?: return true // unreadable log -> trust the RINGING->IDLE signal
         cur.use {
             val ni = it.getColumnIndex(CallLog.Calls.NUMBER)
             val di = it.getColumnIndex(CallLog.Calls.DATE)
             val since = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(6)
             val lastHandled = Prefs.lastHandledCallDate(ctx)
-            while (it.moveToNext()) {
+            var checked = 0
+            while (it.moveToNext() && checked++ < 6) { // row cap lives here now, not in SQL
                 val d = it.getLong(di)
                 if (d <= lastHandled || d < since) continue
                 val n = Repo.norm(it.getString(ni) ?: "")
