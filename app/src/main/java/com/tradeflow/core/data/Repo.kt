@@ -2,6 +2,8 @@ package com.tradeflow.core.data
 
 import kotlinx.coroutines.flow.Flow
 import java.text.SimpleDateFormat
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.Locale
 
@@ -20,6 +22,15 @@ class Repo(private val db: TradeFlowDb) {
         fun norm(p: String): String {
             val d = p.filter { it.isDigit() }
             return if (d.length > 10) d.takeLast(10) else d
+        }
+
+        fun todayStr(): String = LocalDate.now().toString() // ISO yyyy-MM-dd
+
+        /** "2026-09-14" -> "Mon 14" */
+        fun prettyDay(iso: String): String = try {
+            LocalDate.parse(iso).format(DateTimeFormatter.ofPattern("EEE d", Locale.US))
+        } catch (_: Exception) {
+            iso
         }
     }
 
@@ -76,6 +87,12 @@ class Repo(private val db: TradeFlowDb) {
         db.conversations().clearAll()
         log("SYS", "test data reset")
     }
+
+    // ---------- days off ----------
+    fun dayOffs(): Flow<List<DayOff>> = db.daysoff().all()
+    suspend fun offOn(date: String): DayOff? = db.daysoff().offOn(date)
+    suspend fun addDayOff(d: DayOff): Long = db.daysoff().add(d)
+    suspend fun removeDayOffOn(date: String) = db.daysoff().deleteOn(date)
 
     // ---------- templates ----------
     suspend fun template(key: String): MsgTemplate? = db.templates().byKey(key)

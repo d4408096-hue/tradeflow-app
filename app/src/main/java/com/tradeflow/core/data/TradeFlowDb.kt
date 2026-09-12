@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -12,9 +14,10 @@ import androidx.room.RoomDatabase
         Conversation::class,
         ChatMessage::class,
         MsgTemplate::class,
-        DiagEvent::class
+        DiagEvent::class,
+        DayOff::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class TradeFlowDb : RoomDatabase() {
@@ -24,15 +27,22 @@ abstract class TradeFlowDb : RoomDatabase() {
     abstract fun messages(): ChatMessageDao
     abstract fun templates(): MsgTemplateDao
     abstract fun diag(): DiagEventDao
+    abstract fun daysoff(): DayOffDao
 
     companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `daysoff` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `startDate` TEXT NOT NULL, `endDate` TEXT NOT NULL, `reason` TEXT NOT NULL)")
+            }
+        }
+
         @Volatile
         private var I: TradeFlowDb? = null
 
         fun get(ctx: Context): TradeFlowDb = I ?: synchronized(this) {
             I ?: Room.databaseBuilder(ctx.applicationContext, TradeFlowDb::class.java, "tradeflow.db")
-                // V1 only: safe while version = 1 (no upgrades yet).
-                // Before shipping DB version 2, replace with a real Migration.
+                .addMigrations(MIGRATION_1_2)
+                // Last-resort safety for unknown version jumps only.
                 .fallbackToDestructiveMigration()
                 .build().also { I = it }
         }

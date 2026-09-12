@@ -96,4 +96,13 @@ object Prefs {
         return "$hi I'm on a job right now. What do you need? Reply with a number:\n" +
             lines.joinToString("\n")
     }
+
+    /** Day-off notice. span = "today" or "from Sat 14 to Mon 16". */
+    fun offText(ctx: Context, span: String, reason: String): String {
+        val biz = bizName(ctx).ifBlank { "our shop" }
+        val who = firstName(ctx).replaceFirstChar { it.uppercase() }
+        val why = reason.ifBlank { "personal reasons" }
+        return "Hi, $biz here. $who is unavailable $span ($why).\n" +
+            "But drop your problem here 👇 and he'll confirm a slot as soon as he's back."
+    }
 }

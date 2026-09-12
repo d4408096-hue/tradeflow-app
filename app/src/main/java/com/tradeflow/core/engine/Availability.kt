@@ -1,13 +1,15 @@
 package com.tradeflow.core.engine
 
 import android.content.Context
+import com.tradeflow.core.data.Repo
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** Real free-slot calculation from working hours + existing jobs. */
+/** Real free-slot calculation from working hours + existing jobs + days off. */
 object Availability {
     data class Slot(val at: Long, val label: String)
 
@@ -16,7 +18,7 @@ object Availability {
 
     /**
      * Next 2 free slots (hourly starts, 30-min buffer). Returns EMPTY unless 2 found
-     * within 7 days — callers escalate to Mike in that case.
+     * within 7 days — callers escalate to Mike in that case. Skips days off.
      */
     suspend fun nextTwoSlots(ctx: Context): List<Slot> {
         val repo = appRepo(ctx)
@@ -29,6 +31,10 @@ object Availability {
         val found = mutableListOf<Slot>()
         var day = LocalDateTime.now().toLocalDate()
         repeat(7) {
+            if (repo.offOn(day.toString()) != null) {
+                day = day.plusDays(1)
+                return@repeat
+            }
             // java DayOfWeek MON=1..SUN=7 -> Calendar SUN=1..SAT=7
             val calDow = day.dayOfWeek.value.let { v -> if (v == 7) 1 else v + 1 }
             if (days.contains(calDow)) {
@@ -49,15 +55,29 @@ object Availability {
         return if (found.size == 2) found else emptyList()
     }
 
-    /** "He's on a job until ~2:30pm" — from current job's expected end, else now+typical. */
+    /**
+     * Full callback clause. Normal: "He's on a job until ~2:30pm — he'll call
+     * or text you right after". Day off: "He's back on Tue 15 — he'll call or text you then".
+     */
     suspend fun freeAfterLabel(ctx: Context): String {
         val repo = appRepo(ctx)
+        val off = repo.offOn(Repo.todayStr())
+        if (off != null) {
+            val back = try {
+                LocalDate.parse(off.endDate).plusDays(1)
+                    .format(DateTimeFormatter.ofPattern("EEE d", Locale.US))
+            } catch (_: Exception) {
+                "soon"
+            }
+            return "He's back on $back — he'll call or text you then"
+        }
         val nowMs = System.currentTimeMillis()
         val cur = repo.currentJob()
         val at = cur?.endAt?.takeIf { it > nowMs }
             ?: (nowMs + Prefs.typicalJobMins(ctx) * 60_000L)
         val t = LocalDateTime.ofInstant(Instant.ofEpochMilli(at), ZoneId.systemDefault())
-        return "He's on a job until ~" + TONLY.format(t).replace("AM", "am").replace("PM", "pm")
+        return "He's on a job until ~" + TONLY.format(t).replace("AM", "am").replace("PM", "pm") +
+            " — he'll call or text you right after"
     }
 
     private fun pretty(t: LocalDateTime): String =

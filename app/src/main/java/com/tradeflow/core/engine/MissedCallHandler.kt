@@ -25,14 +25,18 @@ object MissedCallHandler {
             return
         }
         repo.log("CALL", "MISSED $num")
-        if (!Prefs.isBusy(ctx)) {
-            BotNotify.missedIdle(ctx, num)
-            return
-        }
         val c = repo.convo(num)
         val now = System.currentTimeMillis()
         if (now - c.lastAutoReplyAt < COOLDOWN_MS) {
             repo.log("BOT", "cooldown skip $num")
+            BotNotify.missedIdle(ctx, num)
+            return
+        }
+        if (repo.offOn(Repo.todayStr()) != null) { // day off beats the Busy toggle
+            BookingBot.startOffLead(ctx, num)
+            return
+        }
+        if (!Prefs.isBusy(ctx)) {
             BotNotify.missedIdle(ctx, num)
             return
         }

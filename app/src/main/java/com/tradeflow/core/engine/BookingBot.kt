@@ -6,6 +6,7 @@ import com.tradeflow.core.data.Conversation
 import com.tradeflow.core.data.Customer
 import com.tradeflow.core.data.Job
 import com.tradeflow.core.data.MsgTemplate
+import com.tradeflow.core.data.Repo
 
 /**
  * The booking brain. Routes every incoming text by conversation stage.
@@ -143,7 +144,7 @@ object BookingBot {
             stage = Conversation.ESCALATED, problem = t.take(500), needsHuman = true
         ))
         val msg = "Thanks! I've sent this straight to ${Prefs.firstName(ctx)}. 📲 " +
-            "${Availability.freeAfterLabel(ctx)} — he'll call or text you right after."
+            Availability.freeAfterLabel(ctx) + "."
         SmsSender.sendNow(ctx, phone, msg)
         repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
         BotNotify.priorityAlert(ctx, phone, t)
@@ -151,10 +152,15 @@ object BookingBot {
         repo.log("BOT", "$phone ESCALATED: ${t.take(80)}")
     }
 
-    /** Customer texts first (no missed call). Busy + cooled down -> send menu. */
+    /** Customer texts first (no missed call). Day off / Busy + cooled down -> auto-reply. */
     private suspend fun onIdleText(ctx: Context, phone: String, c: Conversation, t: String) {
         val repo = appRepo(ctx)
         val now = System.currentTimeMillis()
+        if (repo.offOn(Repo.todayStr()) != null) {
+            if (now - c.lastAutoReplyAt > COOLDOWN_MS) startOffLead(ctx, phone)
+            else BotNotify.newText(ctx, phone, t)
+            return
+        }
         if (Prefs.isBusy(ctx) && now - c.lastAutoReplyAt > COOLDOWN_MS) {
             val known = repo.customerByPhone(phone)
             val menu = if (known != null) Prefs.menuText(ctx, known.name.substringBefore(" "))
@@ -169,6 +175,27 @@ object BookingBot {
         } else {
             BotNotify.newText(ctx, phone, t)
         }
+    }
+
+    /**
+     * Day-off lead capture: unavailability notice (no menu), lead parked quietly
+     * for Mike's return. No loud alert, no nudge — he's on holiday.
+     */
+    suspend fun startOffLead(ctx: Context, phone: String) {
+        val repo = appRepo(ctx)
+        val off = repo.offOn(Repo.todayStr())
+        val span = if (off == null || off.startDate == off.endDate) "today"
+        else "from ${Repo.prettyDay(off.startDate)} to ${Repo.prettyDay(off.endDate)}"
+        val msg = Prefs.offText(ctx, span, off?.reason ?: "")
+        SmsSender.sendNow(ctx, phone, msg)
+        repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
+        val c = repo.convo(phone)
+        repo.updateConvo(c.copy(
+            stage = Conversation.ESCALATED, needsHuman = true,
+            lastAutoReplyAt = System.currentTimeMillis()
+        ))
+        BotNotify.newText(ctx, phone, "Day-off lead ($span) — waiting on customer reply.")
+        repo.log("BOT", "$phone off-lead captured ($span)")
     }
 
     private suspend fun resendMenu(ctx: Context, phone: String, c: Conversation, prefix: String) {
