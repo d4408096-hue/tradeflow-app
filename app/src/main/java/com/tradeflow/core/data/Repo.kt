@@ -60,6 +60,9 @@ class Repo(private val db: TradeFlowDb) {
     fun messagesFor(phone: String): Flow<List<ChatMessage>> = db.messages().forPhone(norm(phone))
     fun autoMsgCount(): Flow<Int> = db.messages().autoCount()
 
+    // Patch #11: truthful ROI counter — unique leads caught, not texts sent.
+    fun caughtCount(): Flow<Int> = db.conversations().autoRepliedCount()
+
     suspend fun convo(phone: String): Conversation {
         val p = norm(phone)
         return db.conversations().byPhone(p) ?: Conversation(phone = p).also {

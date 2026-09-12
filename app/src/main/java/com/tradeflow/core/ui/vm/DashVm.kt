@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 class DashVm(app: Application) : AndroidViewModel(app) {
     private val repo = (app as TradeFlowApp).repo
 
-    val caught: StateFlow<Int> = repo.autoMsgCount()
+    val caught: StateFlow<Int> = repo.caughtCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     val booked: StateFlow<Int> = repo.bookedCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)

@@ -18,6 +18,11 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE needsHuman = 1 ORDER BY lastMsgAt DESC")
     fun escalated(): Flow<List<Conversation>>
 
+    // Patch #11: TRUE calls-caught — unique numbers the bot auto-replied to.
+    // (Old metric counted every auto text, so 1 customer journey = 4-6 "calls".)
+    @Query("SELECT COUNT(*) FROM conversations WHERE lastAutoReplyAt > 0")
+    fun autoRepliedCount(): Flow<Int>
+
     // Patch #10: @Upsert, NEVER Insert(REPLACE) — REPLACE deletes the row first and
     // the messages FK CASCADE would wipe the whole thread on every stage update.
     @Upsert
