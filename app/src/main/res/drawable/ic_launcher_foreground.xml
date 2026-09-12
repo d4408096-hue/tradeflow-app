@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Water drop glyph (default; flavors may override) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,22 C54,22 30,52 30,68 A24,24 0 0,0 78,68 C78,52 54,22 54,22 Z" />
+</vector>

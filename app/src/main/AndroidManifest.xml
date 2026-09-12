@@ -16,10 +16,12 @@
 
     <uses-feature android:name="android.hardware.telephony" android:required="true" />
 
-    <!-- NOTE: launcher icon ships in M3 with real brand assets (default icon until then) -->
+    <!-- Adaptive icon: white glyph + flavor brand color (Patch #5) -->
     <application
         android:name=".TradeFlowApp"
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="false">
