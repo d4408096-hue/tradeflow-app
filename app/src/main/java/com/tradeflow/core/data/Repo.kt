@@ -75,8 +75,10 @@ class Repo(private val db: TradeFlowDb) {
 
     suspend fun addMessage(phone: String, dir: String, body: String, auto: Boolean = false) {
         val p = norm(phone)
-        db.messages().insert(ChatMessage(phone = p, dir = dir, body = body, auto = auto))
+        // Patch #13: parent FIRST — messages FK to conversations. Inserting before the
+        // thread exists crashed on first-contact texts (walk-ins, OTPs, any new number).
         val c = convo(p)
+        db.messages().insert(ChatMessage(phone = p, dir = dir, body = body, auto = auto))
         db.conversations().upsert(
             c.copy(lastMsgAt = System.currentTimeMillis(), unread = c.unread + 1)
         )
