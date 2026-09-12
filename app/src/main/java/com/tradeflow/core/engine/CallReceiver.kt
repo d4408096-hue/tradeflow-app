@@ -23,7 +23,16 @@ class CallReceiver : BroadcastReceiver() {
                     runCatching { appRepo(ctx).log("CALL", "RINGING ${mask(num)}") }
                 }
             }
-            TelephonyManager.EXTRA_STATE_OFFHOOK -> Prefs.clearLastRinging(ctx)
+            // Patch #10: log human-answered calls so the log has no mystery gaps.
+            TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                val hadRinging = Prefs.getLastRinging(ctx).first != null
+                Prefs.clearLastRinging(ctx)
+                if (hadRinging) {
+                    EngineScope.launch {
+                        runCatching { appRepo(ctx).log("CALL", "answered by human, staying silent") }
+                    }
+                }
+            }
             TelephonyManager.EXTRA_STATE_IDLE -> {
                 val (num, at) = Prefs.getLastRinging(ctx)
                 Prefs.clearLastRinging(ctx)

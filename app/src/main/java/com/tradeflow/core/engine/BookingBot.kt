@@ -127,7 +127,8 @@ object BookingBot {
 
     private suspend fun onDetails(ctx: Context, phone: String, c: Conversation, t: String) {
         val repo = appRepo(ctx)
-        val parts = t.split(",", limit = 2).map { it.trim() }.filter { it.isNotEmpty() }
+        // Patch #10: accept "Name, address" OR "Name\naddress" (multi-line replies are common).
+        val parts = t.split(",", "\n", ignoreCase = false, limit = 2).map { it.trim() }.filter { it.isNotEmpty() }
         val (name, addr) = if (parts.size == 2) parts[0] to parts[1] else "New customer" to t
         repo.updateConvo(c.copy(
             stage = Conversation.PENDING_CONFIRM,

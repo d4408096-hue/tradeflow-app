@@ -2,10 +2,9 @@ package com.tradeflow.core.data
 
 import androidx.room.Dao
 import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -34,7 +33,8 @@ interface JobDao {
     @Query("SELECT COUNT(*) FROM jobs WHERE status != 'CANCELLED'")
     fun bookedCount(): Flow<Int>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // Patch #10: @Upsert for hygiene (same reason as Customer/Conversation DAOs).
+    @Upsert
     suspend fun upsert(j: Job): Long
 
     @Update

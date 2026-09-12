@@ -62,7 +62,16 @@ object MissedCallHandler {
     }
 
     /** True only if a fresh MISSED_TYPE row exists for this number. Marks it handled. */
-    private fun verifyMissed(ctx: Context, num: String): Boolean {
+    private suspend fun verifyMissed(ctx: Context, num: String): Boolean {
+        if (queryLogOnce(ctx, num)) return true
+        // IDLE can beat the call-log write by ~1-2s — one retry before giving up.
+        appRepo(ctx).log("CALL", "verify retry for $num")
+        Thread.sleep(2500) // IO thread (EngineScope), safe to block briefly
+        return queryLogOnce(ctx, num)
+    }
+
+    /** Single call-log pass for verifyMissed. Marks the matched row handled. */
+    private fun queryLogOnce(ctx: Context, num: String): Boolean {
         if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CALL_LOG)
             != PackageManager.PERMISSION_GRANTED
         ) {
