@@ -12,10 +12,14 @@ import java.util.Locale
 class Repo(private val db: TradeFlowDb) {
 
     companion object {
-        /** Normalize to US 10-digit: "+1 (512) 555-0134" -> "5125550134". */
+        /**
+         * Normalize to last-10-digits: "+1 (512) 555-0134" -> "5125550134",
+         * "+91 72764 05063" -> "7276405063", short codes untouched.
+         * Keeps call-log and SMS sender formats matched on all carriers.
+         */
         fun norm(p: String): String {
             val d = p.filter { it.isDigit() }
-            return if (d.length == 11 && d.startsWith("1")) d.drop(1) else d
+            return if (d.length > 10) d.takeLast(10) else d
         }
     }
 
