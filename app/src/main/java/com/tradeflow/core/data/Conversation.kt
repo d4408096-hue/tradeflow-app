@@ -6,6 +6,7 @@ import androidx.room.PrimaryKey
 /**
  * Booking-bot state per phone number. The engine reads [stage] to decide
  * what an incoming reply means. [needsHuman] drives the 🚨 priority alert.
+ * [outcome] stamps finished threads: BOOKED vs DECLINED (Patch #12).
  */
 @Entity(tableName = "conversations")
 data class Conversation(
@@ -21,7 +22,8 @@ data class Conversation(
     val lastAutoReplyAt: Long = 0,
     val lastMsgAt: Long = System.currentTimeMillis(),
     val unread: Int = 0,
-    val needsHuman: Boolean = false
+    val needsHuman: Boolean = false,
+    val outcome: String = ""
 ) {
     companion object {
         const val IDLE = "IDLE"                 // no active bot flow
@@ -32,5 +34,8 @@ data class Conversation(
         const val ESCALATED = "ESCALATED"           // with Mike (🚨 until he acts)
         const val PENDING_CONFIRM = "PENDING_CONFIRM" // Mike must tap ✅
         const val DONE = "DONE"                 // booked, flow complete
+
+        const val OUT_BOOKED = "BOOKED"         // outcome: job was booked
+        const val OUT_DECLINED = "DECLINED"     // outcome: Mike declined
     }
 }

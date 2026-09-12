@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DiagEvent::class,
         DayOff::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class TradeFlowDb : RoomDatabase() {
@@ -36,12 +36,19 @@ abstract class TradeFlowDb : RoomDatabase() {
             }
         }
 
+        // Patch #12: outcome column for BOOKED-vs-DECLINED thread labels.
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `conversations` ADD COLUMN `outcome` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         @Volatile
         private var I: TradeFlowDb? = null
 
         fun get(ctx: Context): TradeFlowDb = I ?: synchronized(this) {
             I ?: Room.databaseBuilder(ctx.applicationContext, TradeFlowDb::class.java, "tradeflow.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 // Last-resort safety for unknown version jumps only.
                 .fallbackToDestructiveMigration()
                 .build().also { I = it }

@@ -50,17 +50,27 @@ import kotlinx.coroutines.launch
 @Composable
 fun MessagesScreen(initialPhone: String? = null, onOpened: () -> Unit = {}, vm: MsgVm = viewModel()) {
     val convos by vm.convos.collectAsState()
+    val custs by vm.customers.collectAsState()
+    // Patch #12: phone -> customer name for thread titles.
+    val custNames = remember(custs) { custs.associate { it.phone to it.name } }
     var open by remember { mutableStateOf(initialPhone) }
     LaunchedEffect(Unit) { onOpened() }
     if (open == null) {
-        ConvoList(convos, onOpen = { open = it; vm.open(it) })
+        ConvoList(convos, custNames, onOpen = { open = it; vm.open(it) })
     } else {
-        ThreadView(phone = open!!, convos = convos, vm = vm, onBack = { open = null })
+        ThreadView(
+            phone = open!!, convos = convos,
+            custName = custNames[open!!], vm = vm, onBack = { open = null }
+        )
     }
 }
 
 @Composable
-private fun ConvoList(convos: List<Conversation>, onOpen: (String) -> Unit) {
+private fun ConvoList(
+    convos: List<Conversation>,
+    custNames: Map<String, String>,
+    onOpen: (String) -> Unit
+) {
     Column(Modifier.fillMaxSize().padding(14.dp)) {
         if (convos.isEmpty()) {
             Text("No conversations yet.\nMissed calls + texts land here. 📲", fontSize = 16.sp)
@@ -77,7 +87,10 @@ private fun ConvoList(convos: List<Conversation>, onOpen: (String) -> Unit) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text((if (c.needsHuman) "🚨 " else "") + c.name.ifBlank { c.phone },
+                            val title = c.name.takeIf { it.isNotBlank() }
+                                ?: custNames[c.phone]?.takeIf { it.isNotBlank() }
+                                ?: c.phone
+                            Text((if (c.needsHuman) "🚨 " else "") + title,
                                 fontSize = 17.sp)
                             Text(convoSubtitle(c), fontSize = 14.sp, color = Color.Gray, maxLines = 2)
                         }
@@ -101,12 +114,20 @@ private fun convoSubtitle(c: Conversation): String = when {
     c.stage == Conversation.AWAIT_SERVICE ||
         c.stage == Conversation.AWAIT_SLOT ||
         c.stage == Conversation.AWAIT_DETAILS -> "Bot: waiting on customer…"
+    // Patch #12: declined threads must not wear the Booked badge.
+    c.stage == Conversation.DONE && c.outcome == Conversation.OUT_DECLINED -> "Declined 🚫"
     c.stage == Conversation.DONE -> "Booked ✅"
     else -> "Tap to open"
 }
 
 @Composable
-private fun ThreadView(phone: String, convos: List<Conversation>, vm: MsgVm, onBack: () -> Unit) {
+private fun ThreadView(
+    phone: String,
+    convos: List<Conversation>,
+    custName: String?,
+    vm: MsgVm,
+    onBack: () -> Unit
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val msgs by vm.thread(phone).collectAsState(initial = emptyList())
@@ -114,6 +135,9 @@ private fun ThreadView(phone: String, convos: List<Conversation>, vm: MsgVm, onB
     val notice by vm.notice.collectAsState()
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val title = convo?.name?.takeIf { it.isNotBlank() }
+        ?: custName?.takeIf { it.isNotBlank() }
+        ?: phone
 
     LaunchedEffect(msgs.size) {
         if (msgs.isNotEmpty()) listState.animateScrollToItem(msgs.size - 1)
@@ -128,7 +152,7 @@ private fun ThreadView(phone: String, convos: List<Conversation>, vm: MsgVm, onB
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("‹ Back", fontSize = 16.sp) }
-            Text(convo?.name?.ifBlank { phone } ?: phone, fontSize = 17.sp,
+            Text(title, fontSize = 17.sp,
                 modifier = Modifier.weight(1f))
             TextButton(onClick = {
                 ctx.startActivity(Intent(Intent.ACTION_DIAL, "tel:$phone".toUri()))

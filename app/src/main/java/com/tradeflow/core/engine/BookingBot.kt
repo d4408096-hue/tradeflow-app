@@ -242,7 +242,10 @@ object BookingBot {
             .ifBlank { "Thanks for reaching out! Unfortunately this isn't something we handle. Sorry about that!" }
         SmsSender.sendNow(ctx, phone, msg)
         repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
-        repo.updateConvo(c.copy(stage = Conversation.DONE, needsHuman = false))
+        repo.updateConvo(c.copy(
+            stage = Conversation.DONE, needsHuman = false,
+            outcome = Conversation.OUT_DECLINED // Patch #12: stamp the ending
+        ))
         BotNotify.clearAlert(ctx, phone)
     }
 
@@ -273,7 +276,10 @@ object BookingBot {
             "I'll text when I'm on my way. - ${Prefs.firstName(ctx)}"
         SmsSender.sendNow(ctx, phone, msg)
         repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
-        repo.updateConvo(c.copy(stage = Conversation.DONE, needsHuman = false, customerId = cid))
+        repo.updateConvo(c.copy(
+            stage = Conversation.DONE, needsHuman = false, customerId = cid,
+            outcome = Conversation.OUT_BOOKED // Patch #12: stamp the ending
+        ))
         BotNotify.clearAlert(ctx, phone)
         repo.log("BOT", "$phone BOOKED job#$jobId ${c.slotLabel}")
         return jobId

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.tradeflow.core.TradeFlowApp
 import com.tradeflow.core.data.ChatMessage
 import com.tradeflow.core.data.Conversation
+import com.tradeflow.core.data.Customer
 import com.tradeflow.core.engine.BookingBot
 import com.tradeflow.core.engine.SmsSender
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +21,10 @@ class MsgVm(app: Application) : AndroidViewModel(app) {
     private val repo = (app as TradeFlowApp).repo
 
     val convos: StateFlow<List<Conversation>> = repo.conversations()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Patch #12: customer names for thread titles (fallback when convo has no name yet).
+    val customers: StateFlow<List<Customer>> = repo.customers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _notice = MutableStateFlow<String?>(null)
