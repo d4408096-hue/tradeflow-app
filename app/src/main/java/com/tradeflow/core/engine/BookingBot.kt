@@ -7,6 +7,9 @@ import com.tradeflow.core.data.Customer
 import com.tradeflow.core.data.Job
 import com.tradeflow.core.data.MsgTemplate
 import com.tradeflow.core.data.Repo
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The booking brain. Routes every incoming text by conversation stage.
@@ -14,7 +17,18 @@ import com.tradeflow.core.data.Repo
  */
 object BookingBot {
 
+    // Patch #15: one lock per phone — two rapid texts can't interleave stages/sends.
+    private val replyLocks = ConcurrentHashMap<String, Mutex>()
+
+    // Patch #15: Mike's actions are mutually exclusive (no double-tap double-job).
+    private val mikeLock = Mutex()
+
     suspend fun handleReply(ctx: Context, phone: String, raw: String) {
+        val mutex = replyLocks.getOrPut(phone) { Mutex() }
+        mutex.withLock { routeReply(ctx, phone, raw) }
+    }
+
+    private suspend fun routeReply(ctx: Context, phone: String, raw: String) {
         val repo = appRepo(ctx)
         val c = repo.convo(phone)
         val t = raw.trim()
@@ -56,10 +70,15 @@ object BookingBot {
         }
         val name = svc[pick - 1]
         if (pick == svc.size) { // last item = Other -> escalation path
-            repo.updateConvo(c.copy(stage = Conversation.AWAIT_PROBLEM, service = name))
             val msg = "No problem — tell me about it. 👇\nJust describe your problem in one text " +
                 "and I'll have ${Prefs.firstName(ctx)} take a look personally."
-            SmsSender.sendNow(ctx, phone, msg)
+            // Patch #15: stay on the menu if the prompt fails — next reply retries cleanly.
+            if (!SmsSender.sendNow(ctx, phone, msg)) {
+                BotNotify.sendFailed(ctx, phone)
+                repo.log("SMS", "other-prompt FAILED to $phone")
+                return
+            }
+            repo.updateConvo(c.copy(stage = Conversation.AWAIT_PROBLEM, service = name))
             repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
             repo.log("BOT", "$phone chose OTHER")
             return
@@ -68,18 +87,27 @@ object BookingBot {
         val slots = Availability.nextTwoSlots(ctx)
         if (slots.size < 2) {
             escalate(ctx, phone, c.copy(service = name), "no free slots for $name")
-            SmsSender.sendNow(ctx, phone,
-                "Thanks — ${Prefs.firstName(ctx)} is fully booked this week. He'll text you shortly with options. 👍")
+            val fullMsg = "Thanks — ${Prefs.firstName(ctx)} is fully booked this week. He'll text you shortly with options. 👍"
+            if (SmsSender.sendNow(ctx, phone, fullMsg)) {
+                repo.addMessage(phone, ChatMessage.OUT, fullMsg, auto = true)
+            } else {
+                repo.log("SMS", "full-week FAILED to $phone")
+            }
+            return
+        }
+        val msg = repo.render(MsgTemplate.SLOTS,
+            mapOf("service" to name, "slotA" to slots[0].label, "slotB" to slots[1].label))
+            .ifBlank { "Got it — $name 👍 I'm free at:\nA. ${slots[0].label}\nB. ${slots[1].label}\n\nReply A or B." }
+        // Patch #15: only advance on real send.
+        if (!SmsSender.sendNow(ctx, phone, msg)) {
+            BotNotify.sendFailed(ctx, phone)
+            repo.log("SMS", "slots FAILED to $phone")
             return
         }
         repo.updateConvo(c.copy(
             stage = Conversation.AWAIT_SLOT, service = name,
             customerId = known?.id ?: c.customerId
         ))
-        val msg = repo.render(MsgTemplate.SLOTS,
-            mapOf("service" to name, "slotA" to slots[0].label, "slotB" to slots[1].label))
-            .ifBlank { "Got it — $name 👍 I'm free at:\nA. ${slots[0].label}\nB. ${slots[1].label}\n\nReply A or B." }
-        SmsSender.sendNow(ctx, phone, msg)
         repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
         repo.log("BOT", "$phone service=$name")
     }
@@ -116,12 +144,17 @@ object BookingBot {
             if (Prefs.autoConfirm(ctx)) confirmBooking(ctx, phone)
             return
         }
+        val msg = "Perfect — ${slots[idx].label}. Just reply with your name + address."
+        // Patch #15: stay on slot-pick if the ask fails — next reply retries cleanly.
+        if (!SmsSender.sendNow(ctx, phone, msg)) {
+            BotNotify.sendFailed(ctx, phone)
+            repo.log("SMS", "details-ask FAILED to $phone")
+            return
+        }
         repo.updateConvo(c.copy(
             stage = Conversation.AWAIT_DETAILS,
             slotLabel = slots[idx].label, slotAt = slots[idx].at
         ))
-        val msg = "Perfect — ${slots[idx].label}. Just reply with your name + address."
-        SmsSender.sendNow(ctx, phone, msg)
         repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
     }
 
@@ -141,13 +174,18 @@ object BookingBot {
 
     private suspend fun onProblem(ctx: Context, phone: String, c: Conversation, t: String) {
         val repo = appRepo(ctx)
+        // Escalation first: Mike must see the problem even if the ack text fails.
         repo.updateConvo(c.copy(
             stage = Conversation.ESCALATED, problem = t.take(500), needsHuman = true
         ))
         val msg = "Thanks! I've sent this straight to ${Prefs.firstName(ctx)}. 📲 " +
             Availability.freeAfterLabel(ctx) + "."
-        SmsSender.sendNow(ctx, phone, msg)
-        repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
+        if (!SmsSender.sendNow(ctx, phone, msg)) { // Patch #15: ack failure must not hide the lead
+            BotNotify.sendFailed(ctx, phone)
+            repo.log("SMS", "callback FAILED to $phone")
+        } else {
+            repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
+        }
         BotNotify.priorityAlert(ctx, phone, t)
         AlertNudgeWorker.scheduleOnce(ctx, phone)
         repo.log("BOT", "$phone ESCALATED: ${t.take(80)}")
@@ -166,7 +204,12 @@ object BookingBot {
             val known = repo.customerByPhone(phone)
             val menu = if (known != null) Prefs.menuText(ctx, known.name.substringBefore(" "))
             else Prefs.menuText(ctx, null)
-            SmsSender.sendNow(ctx, phone, menu)
+            // Patch #14: only stamp on REAL send — a false stamp + 2hr cooldown would lose the lead.
+            if (!SmsSender.sendNow(ctx, phone, menu)) {
+                BotNotify.sendFailed(ctx, phone)
+                repo.log("SMS", "menu FAILED to $phone")
+                return
+            }
             repo.addMessage(phone, ChatMessage.OUT, menu, auto = true)
             repo.updateConvo(c.copy(
                 stage = Conversation.AWAIT_SERVICE,
@@ -206,7 +249,11 @@ object BookingBot {
     private suspend fun resendMenu(ctx: Context, phone: String, c: Conversation, prefix: String) {
         val repo = appRepo(ctx)
         val msg = "$prefix\n\n" + Prefs.menuText(ctx, null)
-        SmsSender.sendNow(ctx, phone, msg)
+        if (!SmsSender.sendNow(ctx, phone, msg)) { // Patch #15
+            BotNotify.sendFailed(ctx, phone)
+            repo.log("SMS", "resend FAILED to $phone")
+            return
+        }
         repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
         repo.updateConvo(c.copy(stage = Conversation.AWAIT_SERVICE))
     }
@@ -219,73 +266,108 @@ object BookingBot {
         repo.log("BOT", "$phone escalated: $reason")
     }
 
-    // ---------- Mike's in-app actions (called from UI in M3) ----------
+    // ---------- Mike's in-app actions (mutually exclusive under mikeLock) ----------
 
     /** ✅ I can do this -> customer gets slot offer, flow continues. */
     suspend fun resolveYes(ctx: Context, phone: String) {
-        val repo = appRepo(ctx)
-        val c = repo.convo(phone)
-        val slots = Availability.nextTwoSlots(ctx)
-        if (slots.size < 2) {
-            escalate(ctx, phone, c, "Mike said yes but no slots free")
-            return
+        mikeLock.withLock {
+            val repo = appRepo(ctx)
+            val c = repo.convo(phone)
+            val slots = Availability.nextTwoSlots(ctx)
+            if (slots.size < 2) {
+                escalate(ctx, phone, c, "Mike said yes but no slots free")
+                return@withLock
+            }
+            val msg = "Good news — ${Prefs.firstName(ctx)} says he can handle this! 👍 He's free at:\n" +
+                "A. ${slots[0].label}\nB. ${slots[1].label}\n\nReply A or B."
+            // Patch #15: keep the red card if the offer fails — Mike retries the ✅.
+            if (!SmsSender.sendNow(ctx, phone, msg)) {
+                BotNotify.sendFailed(ctx, phone)
+                repo.log("SMS", "yes-slots FAILED to $phone")
+                return@withLock
+            }
+            repo.updateConvo(c.copy(stage = Conversation.AWAIT_SLOT, needsHuman = false))
+            repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
+            BotNotify.clearAlert(ctx, phone)
         }
-        repo.updateConvo(c.copy(stage = Conversation.AWAIT_SLOT, needsHuman = false))
-        val msg = "Good news — ${Prefs.firstName(ctx)} says he can handle this! 👍 He's free at:\n" +
-            "A. ${slots[0].label}\nB. ${slots[1].label}\n\nReply A or B."
-        SmsSender.sendNow(ctx, phone, msg)
-        repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
-        BotNotify.clearAlert(ctx, phone)
     }
 
     /** ❌ Can't help -> polite decline text, flow ends. */
     suspend fun resolveNo(ctx: Context, phone: String) {
-        val repo = appRepo(ctx)
-        val c = repo.convo(phone)
-        val msg = repo.render(MsgTemplate.DECLINE, mapOf("biz" to Prefs.bizName(ctx).ifBlank { "us" }))
-            .ifBlank { "Thanks for reaching out! Unfortunately this isn't something we handle. Sorry about that!" }
-        SmsSender.sendNow(ctx, phone, msg)
-        repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
-        repo.updateConvo(c.copy(
-            stage = Conversation.DONE, needsHuman = false,
-            outcome = Conversation.OUT_DECLINED // Patch #12: stamp the ending
-        ))
-        BotNotify.clearAlert(ctx, phone)
+        mikeLock.withLock {
+            val repo = appRepo(ctx)
+            val c = repo.convo(phone)
+            val msg = repo.render(MsgTemplate.DECLINE, mapOf("biz" to Prefs.bizName(ctx).ifBlank { "us" }))
+                .ifBlank { "Thanks for reaching out! Unfortunately this isn't something we handle. Sorry about that!" }
+            // Patch #15: keep the red card if the decline fails — Mike retries the ❌.
+            if (!SmsSender.sendNow(ctx, phone, msg)) {
+                BotNotify.sendFailed(ctx, phone)
+                repo.log("SMS", "decline FAILED to $phone")
+                return@withLock
+            }
+            repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
+            repo.updateConvo(c.copy(
+                stage = Conversation.DONE, needsHuman = false,
+                outcome = Conversation.OUT_DECLINED // Patch #12: stamp the ending
+            ))
+            BotNotify.clearAlert(ctx, phone)
+        }
     }
 
     /** ✅ Confirm booking -> creates customer (if new) + job, sends booked text. Returns job id. */
     suspend fun confirmBooking(ctx: Context, phone: String): Long? {
-        val repo = appRepo(ctx)
-        val c = repo.convo(phone)
-        if (c.stage != Conversation.PENDING_CONFIRM || c.slotAt <= 0) return null
-        var cust = repo.customerByPhone(phone)
-        if (cust == null) {
-            repo.saveCustomer(Customer(
-                name = c.name.ifBlank { "New customer" }, phone = phone, address = c.address
+        return mikeLock.withLock {
+            val repo = appRepo(ctx)
+            val c = repo.convo(phone)
+            if (c.stage != Conversation.PENDING_CONFIRM || c.slotAt <= 0) return@withLock null
+            val durMs = Prefs.typicalJobMins(ctx) * 60_000L
+            // Patch #15: re-check the slot at confirm time — two customers can hold the same offer.
+            if (repo.clashingJobs(c.slotAt, c.slotAt + durMs).isNotEmpty()) {
+                repo.updateConvo(c.copy(
+                    stage = Conversation.ESCALATED, needsHuman = true,
+                    problem = "Slot ${c.slotLabel} filled before confirm — needs a fresh offer."
+                ))
+                BotNotify.priorityAlert(ctx, phone, "Double-book blocked for ${c.slotLabel}")
+                val clashMsg = "Hmm, those just filled up! ${Prefs.firstName(ctx)} will text you fresh times shortly. 👍"
+                if (SmsSender.sendNow(ctx, phone, clashMsg)) {
+                    repo.addMessage(phone, ChatMessage.OUT, clashMsg, auto = true)
+                }
+                repo.log("BOT", "$phone confirm blocked: slot clash")
+                return@withLock null
+            }
+            var cust = repo.customerByPhone(phone)
+            if (cust == null) {
+                repo.saveCustomer(Customer(
+                    name = c.name.ifBlank { "New customer" }, phone = phone, address = c.address
+                ))
+                cust = repo.customerByPhone(phone)
+            } else if (c.address.isNotBlank() && cust.address.isBlank()) {
+                repo.saveCustomer(cust.copy(address = c.address))
+            }
+            val cid = cust?.id ?: return@withLock null
+            val jobId = repo.saveJob(Job(
+                customerId = cid,
+                title = "${c.service.ifBlank { "Service" }} — ${cust.name}",
+                service = c.service,
+                startAt = c.slotAt, endAt = c.slotAt + durMs,
+                status = Job.SCHEDULED
             ))
-            cust = repo.customerByPhone(phone)
-        } else if (c.address.isNotBlank() && cust.address.isBlank()) {
-            repo.saveCustomer(cust.copy(address = c.address))
+            val msg = "✅ You're booked for ${c.slotLabel}, ${cust.name.substringBefore(" ")}! " +
+                "I'll text when I'm on my way. - ${Prefs.firstName(ctx)}"
+            // Patch #15: the booking is REAL (job saved) — on text failure just make Mike follow up.
+            if (!SmsSender.sendNow(ctx, phone, msg)) {
+                BotNotify.sendFailed(ctx, phone)
+                repo.log("SMS", "booked-text FAILED to $phone (job#$jobId saved)")
+            } else {
+                repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
+            }
+            repo.updateConvo(c.copy(
+                stage = Conversation.DONE, needsHuman = false, customerId = cid,
+                outcome = Conversation.OUT_BOOKED // Patch #12: stamp the ending
+            ))
+            BotNotify.clearAlert(ctx, phone)
+            repo.log("BOT", "$phone BOOKED job#$jobId ${c.slotLabel}")
+            return@withLock jobId
         }
-        val cid = cust?.id ?: return null
-        val durMs = Prefs.typicalJobMins(ctx) * 60_000L
-        val jobId = repo.saveJob(Job(
-            customerId = cid,
-            title = "${c.service.ifBlank { "Service" }} — ${cust.name}",
-            service = c.service,
-            startAt = c.slotAt, endAt = c.slotAt + durMs,
-            status = Job.SCHEDULED
-        ))
-        val msg = "✅ You're booked for ${c.slotLabel}, ${cust.name.substringBefore(" ")}! " +
-            "I'll text when I'm on my way. - ${Prefs.firstName(ctx)}"
-        SmsSender.sendNow(ctx, phone, msg)
-        repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
-        repo.updateConvo(c.copy(
-            stage = Conversation.DONE, needsHuman = false, customerId = cid,
-            outcome = Conversation.OUT_BOOKED // Patch #12: stamp the ending
-        ))
-        BotNotify.clearAlert(ctx, phone)
-        repo.log("BOT", "$phone BOOKED job#$jobId ${c.slotLabel}")
-        return jobId
     }
 }
