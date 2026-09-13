@@ -188,7 +188,11 @@ object BookingBot {
         val span = if (off == null || off.startDate == off.endDate) "today"
         else "from ${Repo.prettyDay(off.startDate)} to ${Repo.prettyDay(off.endDate)}"
         val msg = Prefs.offText(ctx, span, off?.reason ?: "")
-        SmsSender.sendNow(ctx, phone, msg)
+        if (!SmsSender.sendNow(ctx, phone, msg)) { // Patch #14: no stamp on failed send
+            BotNotify.sendFailed(ctx, phone)
+            repo.log("SMS", "off-lead FAILED to $phone")
+            return
+        }
         repo.addMessage(phone, ChatMessage.OUT, msg, auto = true)
         val c = repo.convo(phone)
         repo.updateConvo(c.copy(

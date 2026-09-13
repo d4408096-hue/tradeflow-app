@@ -25,6 +25,12 @@ class SmsReceiver : BroadcastReceiver() {
                 if (body.isBlank()) return@launch
                 val repo = appRepo(appCtx)
                 val phone = Repo.norm(from)
+                // Patch #14: alphanumeric/bank senders ("KOTAKB") norm to "" — nothing
+                // dialable to reply to. Skip WITHOUT creating a ghost thread.
+                if (phone.length < 7) {
+                    repo.log("SMS", "IN from non-dialable sender, ignored")
+                    return@launch
+                }
                 repo.addMessage(phone, ChatMessage.IN, body)
                 repo.log("SMS", "IN $phone: ${body.take(60)}")
                 BookingBot.handleReply(appCtx, phone, body)
