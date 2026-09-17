@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launcher icon background: solid black to match the TradeFlow logo.
+         App theme colors stay per-flavor in brand.xml (brandPrimary). -->
+    <color name="ic_launcher_background">#FF000000</color>
+</resources>

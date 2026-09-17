@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Demo brand #1: Mike's Plumbing (Austin, TX) -->
+<!-- TradeFlow unified brand (flavor: mikeDemo — build twin, retiring later) -->
 <resources>
-    <string name="app_name">Mike\'s Plumbing Pro</string>
+    <string name="app_name">TradeFlow</string>
     <string name="business_name">Mike\'s Plumbing</string>
     <string name="business_phone">(512) 555-0134</string>
     <color name="brandPrimary">#1D4ED8</color>

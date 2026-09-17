@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Demo brand #2: Bob's Electric (Dallas, TX) -->
+<!-- TradeFlow unified brand (flavor: bobDemo — build twin, retiring later) -->
 <resources>
-    <string name="app_name">Bob\'s Electric Pro</string>
+    <string name="app_name">TradeFlow</string>
     <string name="business_name">Bob\'s Electric</string>
     <string name="business_phone">(214) 555-0199</string>
     <color name="brandPrimary">#C2410C</color>
